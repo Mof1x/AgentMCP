@@ -1,3 +1,4 @@
+import copy
 import sys
 import json
 import logging
@@ -21,7 +22,8 @@ class MCPClient:
         """Асинхронный контекстный менеджер для соединения с MCP-сервером через stdio."""
         server_params = StdioServerParameters(
             command=sys.executable,
-            args=[self.script_path]
+            args=[self.script_path],
+            env={"DB_PATH": settings.DB_PATH}
         )
         
         async with stdio_client(server_params) as (read_stream, write_stream):
@@ -41,7 +43,14 @@ class MCPClientSessionWrapper:
         tool_list = await self.session.list_tools()
         openai_tools = []
         for t in tool_list.tools:
-            parameters = getattr(t, "input_schema", getattr(t, "inputSchema", {}))
+            if t.name == "get_creation_result":
+                continue  # Recovery is controlled by the orchestrator, not the model.
+            parameters = copy.deepcopy(getattr(t, "input_schema", getattr(t, "inputSchema", {})))
+            if t.name == "create_event_with_reminders":
+                for field in ("operation_id", "chat_id"):
+                    parameters.get("properties", {}).pop(field, None)
+                    if field in parameters.get("required", []):
+                        parameters["required"].remove(field)
             openai_tools.append({
                 "type": "function",
                 "function": {
@@ -70,10 +79,10 @@ class MCPClientSessionWrapper:
             
             output = "\n".join(text_parts) if text_parts else "{}"
             
-            if getattr(result, "is_error", False):
-                return json.dumps({"error": output}, ensure_ascii=False)
+            if getattr(result, "isError", getattr(result, "is_error", False)):
+                return json.dumps({"error": output, "status": "unknown"}, ensure_ascii=False)
                 
             return output
         except Exception as e:
             logger.error(f"Ошибка при вызове MCP инструмента '{name}': {e}", exc_info=True)
-            return json.dumps({"error": f"Tool execution failed: {str(e)}"}, ensure_ascii=False)
+            return json.dumps({"error": "Не удалось получить результат инструмента.", "status": "unknown"}, ensure_ascii=False)

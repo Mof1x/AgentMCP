@@ -2,10 +2,16 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+
 # Добавляем корневую директорию проекта в sys.path
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+from mcp_server.tools.creation_tools import (
+    ReminderInput,
+    create_event_with_reminders as _create_event_with_reminders,
+    get_creation_result as _get_creation_result,
+)
 from mcp_server.tools.free_slots_tools import find_free_slots as _find_free_slots
 from mcp_server.tools.summary_tools import get_day_summary as _get_day_summary
 from mcp_server.tools.recurring_tools import create_recurring_events as _create_recurring_events
@@ -277,6 +283,43 @@ def get_overdue_events(
         since=since,
         limit=limit
     )
+
+
+@server.tool()
+def create_event_with_reminders(
+    title: str,
+    start_datetime: str,
+    chat_id: int,
+    operation_id: str,
+    end_datetime: Optional[str] = None,
+    reminders: Optional[list[ReminderInput]] = None,
+    description: Optional[str] = None,
+    category_id: Optional[int] = None,
+    priority: int = 2,
+    is_all_day: bool = False,
+) -> dict:
+    """Создаёт одно событие и все его напоминания атомарно.
+
+    Даты: YYYY-MM-DD HH:MM:SS. reminders: список {remind_at, custom_message}.
+    Если конец не задан, длительность — час (для is_all_day — сутки).
+    Для is_all_day обе границы должны быть в полночь.
+    Проверяет конфликты пользователя внутри транзакции.
+    status=saved: всё сохранено; not_saved: эта операция ничего не изменила;
+    unknown: нельзя повторять запись до проверки результата.
+    Используй для создания одиночного события, в том числе без напоминаний.
+    """
+    return _create_event_with_reminders(
+        title=title, start_datetime=start_datetime, chat_id=chat_id,
+        operation_id=operation_id, end_datetime=end_datetime, reminders=reminders,
+        description=description, category_id=category_id, priority=priority,
+        is_all_day=is_all_day,
+    )
+
+
+@server.tool()
+def get_creation_result(operation_id: str, chat_id: int) -> dict:
+    """Служебная проверка квитанции после потери ответа MCP."""
+    return _get_creation_result(operation_id, chat_id)
 
 
 if __name__ == "__main__":

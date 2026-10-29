@@ -39,6 +39,14 @@ CREATE TABLE IF NOT EXISTS reminders (
     is_sent BOOLEAN DEFAULT 0
 );
 
+-- Квитанция сохраняется вместе с событием и напоминаниями.
+CREATE TABLE IF NOT EXISTS creation_receipts (
+    operation_id TEXT PRIMARY KEY,
+    chat_id INTEGER NOT NULL,
+    request_json TEXT NOT NULL,
+    result_json TEXT NOT NULL
+);
+
 -- Индексы для быстрого поиска
 CREATE INDEX IF NOT EXISTS idx_events_start ON events(start_datetime);
 CREATE INDEX IF NOT EXISTS idx_events_priority ON events(priority);
