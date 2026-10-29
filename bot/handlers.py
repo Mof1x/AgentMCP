@@ -3,6 +3,11 @@ from aiogram import Router, types
 from aiogram.filters import Command
 from aiogram.enums import ChatAction
 from agent.orchestrator import AgentOrchestrator
+from asyncio import to_thread
+from aiogram.filters.command import CommandObject
+from aiogram.types import BufferedInputFile
+
+from mcp_server.tools.export_tools import export_schedule
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -58,6 +63,55 @@ async def cmd_today(message: types.Message):
         user_text="Покажи все мои дела и события, запланированные на сегодня."
     )
     await message.answer(response)
+
+
+@router.message(Command("export"))
+async def cmd_export(message: types.Message, command: CommandObject):
+    arguments = (command.args or "").split()
+
+    if len(arguments) != 2:
+        await message.answer(
+            "Укажи начальную и конечную даты:\n"
+            "/export 2026-11-01 2026-11-07\n\n"
+            "Обе даты входят в период экспорта."
+        )
+        return
+
+    start_date, end_date = arguments
+
+    try:
+        result = await to_thread(
+            export_schedule,
+            start_date=start_date,
+            end_date=end_date,
+            chat_id=message.chat.id
+        )
+    except ValueError as error:
+        await message.answer(
+            f"Не удалось сформировать календарь: {error}\n"
+            "Даты нужно писать в формате ГГГГ-ММ-ДД."
+        )
+        return
+    except Exception:
+        logger.exception("Ошибка формирования календаря")
+        await message.answer(
+            "Не удалось сформировать календарь. Попробуй позже."
+        )
+        return
+
+    document = BufferedInputFile(
+        file=result["ics_content"].encode("utf-8"),
+        filename=result["filename"]
+    )
+
+    await message.answer_document(
+        document=document,
+        caption=(
+            f"Расписание с {start_date} по {end_date}.\n"
+            f"Событий: {result['events_count']}.\n"
+            "Время встреч указано как местное время календаря."
+        )
+    )
 
 
 @router.message()
