@@ -6,6 +6,12 @@ from typing import Optional
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+from mcp_server.tools.free_slots_tools import find_free_slots as _find_free_slots
+from mcp_server.tools.summary_tools import get_day_summary as _get_day_summary
+from mcp_server.tools.recurring_tools import create_recurring_events as _create_recurring_events
+from mcp_server.tools.reschedule_tools import reschedule_event as _reschedule_event
+from mcp_server.tools.export_tools import export_schedule as _export_schedule
+from mcp_server.tools.overdue_tools import get_overdue_events as _get_overdue_events
 
 try:
     from mcp.server.mcpserver import MCPServer
@@ -80,6 +86,197 @@ def execute_write_query(query: str) -> dict:
     :param query: SQL-запрос на модификацию данных.
     """
     return _execute_write_query(query)
+
+
+@server.tool()
+def find_free_slots(
+    date: str,
+    chat_id: int,
+    duration_minutes: int = 60,
+    day_start: str = "09:00",
+    day_end: str = "21:00",
+    buffer_minutes: int = 0
+) -> dict:
+    """
+    Ищет свободные промежутки в расписании пользователя.
+
+    date: дата в формате YYYY-MM-DD.
+    chat_id: идентификатор чата из метаданных сообщения пользователя.
+    duration_minutes: необходимая длительность дела в минутах.
+    day_start: начало периода поиска в формате HH:MM.
+    day_end: конец периода поиска в формате HH:MM.
+    buffer_minutes: минимальный перерыв между новым делом
+    и каждым соседним событием, от 0 до 1440 минут.
+
+    Например, buffer_minutes=15 оставляет по 15 минут
+    перед существующими событиями и после них.
+    Возвращает свободные интервалы не короче duration_minutes
+    с уже учтёнными перерывами.
+    Только предлагает время и не изменяет расписание.
+    """
+    return _find_free_slots(
+        date=date,
+        chat_id=chat_id,
+        duration_minutes=duration_minutes,
+        day_start=day_start,
+        day_end=day_end,
+        buffer_minutes=buffer_minutes
+    )
+
+
+@server.tool()
+def get_day_summary(
+    date: str,
+    chat_id: int,
+    day_start: str = "09:00",
+    day_end: str = "21:00"
+) -> dict:
+    """
+    Показывает загруженность расписания пользователя за выбранную дату
+    в пределах указанного периода.
+
+    date: дата в формате YYYY-MM-DD.
+    chat_id: идентификатор чата из метаданных сообщения пользователя.
+    day_start: начало периода в формате HH:MM.
+    day_end: конец периода в формате HH:MM.
+
+    Возвращает количество запланированных событий, занятые и свободные
+    минуты, процент загруженности и самый длинный свободный промежуток.
+    Пересекающиеся события не учитываются дважды в занятом времени.
+    Не изменяет расписание.
+    """
+    return _get_day_summary(
+        date=date,
+        chat_id=chat_id,
+        day_start=day_start,
+        day_end=day_end
+    )
+
+
+@server.tool()
+def create_recurring_events(
+    title: str,
+    first_start: str,
+    chat_id: int,
+    duration_minutes: int = 60,
+    repeat_every_days: int = 7,
+    occurrences: int = 4,
+    priority: int = 2
+) -> dict:
+    """
+    Создаёт конечную серию повторяющихся событий.
+
+    title: название события.
+    first_start: начало первого события в формате YYYY-MM-DD HH:MM:SS.
+    chat_id: идентификатор чата из метаданных сообщения пользователя.
+    duration_minutes: длительность каждого события, от 1 до 1440 минут.
+    repeat_every_days: интервал между событиями, от 1 до 365 дней.
+    occurrences: общее число событий, включая первое, от 1 до 52.
+    priority: важность от 1 до 4.
+
+    Например, repeat_every_days=7 и occurrences=4 создают четыре
+    события с интервалом в неделю.
+
+    Проверяет конфликты всех дат внутри одной транзакции.
+    Если обнаружен хотя бы один конфликт, не создаёт ни одного события.
+    Напоминания не создаются.
+    """
+    return _create_recurring_events(
+        title=title,
+        first_start=first_start,
+        chat_id=chat_id,
+        duration_minutes=duration_minutes,
+        repeat_every_days=repeat_every_days,
+        occurrences=occurrences,
+        priority=priority
+    )
+
+
+@server.tool()
+def reschedule_event(
+    event_id: int,
+    new_start: str,
+    chat_id: int
+) -> dict:
+    """
+    Переносит запланированное событие пользователя вместе
+    с ещё не отправленными напоминаниями.
+
+    event_id: идентификатор переносимого события.
+    new_start: новое начало в формате YYYY-MM-DD HH:MM:SS.
+    chat_id: идентификатор чата из метаданных сообщения пользователя.
+
+    Сохраняет длительность события. Если конец не указан,
+    использует длительность один час.
+    Сдвигает неотправленные напоминания на разницу между новым
+    и старым временем начала. Отправленные напоминания не изменяет.
+    Проверяет конфликты, исключая само переносимое событие.
+    При конфликте событие и напоминания остаются без изменений.
+    События на весь день не поддерживаются.
+    """
+    return _reschedule_event(
+        event_id=event_id,
+        new_start=new_start,
+        chat_id=chat_id
+    )
+
+
+@server.tool()
+def export_schedule(
+    start_date: str,
+    end_date: str,
+    chat_id: int
+) -> dict:
+    """
+    Формирует содержимое календаря в формате ICS.
+
+    start_date: первая дата периода в формате YYYY-MM-DD.
+    end_date: последняя дата периода включительно, формат YYYY-MM-DD.
+    chat_id: идентификатор чата из метаданных сообщения пользователя.
+
+    Экспортирует запланированные события указанного пользователя,
+    пересекающие период, включая события на весь день.
+    Максимальный период — 366 дней.
+    Возвращает filename, events_count и ics_content.
+    Самостоятельно файл в Telegram не отправляет.
+    """
+    return _export_schedule(
+        start_date=start_date,
+        end_date=end_date,
+        chat_id=chat_id
+    )
+
+
+@server.tool()
+def get_overdue_events(
+    chat_id: int,
+    as_of: str,
+    since: Optional[str] = None,
+    limit: int = 50
+) -> dict:
+    """
+    Показывает события, время окончания которых уже наступило,
+    но выполнение ещё не отмечено: статус остаётся planned.
+
+    chat_id: идентификатор чата из метаданных сообщения пользователя.
+    as_of: момент проверки в формате YYYY-MM-DD HH:MM:SS.
+    since: необязательная нижняя граница времени окончания событий,
+    формат YYYY-MM-DD HH:MM:SS.
+    limit: максимальное количество результатов, от 1 до 100.
+
+    Актуальное время для as_of получай через get_current_datetime.
+    Результаты сортируются по важности, затем по времени окончания.
+    events_count — количество возвращённых событий.
+    has_more=True означает, что найдены дополнительные события
+    сверх указанного лимита.
+    Не изменяет события и не отмечает их выполненными.
+    """
+    return _get_overdue_events(
+        chat_id=chat_id,
+        as_of=as_of,
+        since=since,
+        limit=limit
+    )
 
 
 if __name__ == "__main__":

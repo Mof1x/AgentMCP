@@ -74,6 +74,12 @@ class TestScheduleMCPTools(unittest.TestCase):
                 self.assertIn("check_time_conflict", tool_names)
                 self.assertIn("execute_read_query", tool_names)
                 self.assertIn("execute_write_query", tool_names)
+                self.assertIn("find_free_slots", tool_names)
+                self.assertIn("get_day_summary", tool_names)
+                self.assertIn("create_recurring_events", tool_names)
+                self.assertIn("reschedule_event", tool_names)
+                self.assertIn("export_schedule", tool_names)
+                self.assertIn("get_overdue_events", tool_names)
 
                 # Вызов инструмента через протокол MCP
                 res_str = await session.call_tool("get_current_datetime", {})
