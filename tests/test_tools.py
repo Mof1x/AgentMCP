@@ -1,12 +1,15 @@
 import asyncio
 import sys
 import unittest
+import tempfile
+from unittest.mock import patch
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from config import settings
 from database.seed_data import seed
 from mcp_server.tools.datetime_tools import get_current_datetime
 from mcp_server.tools.schema_tools import get_db_schema
@@ -17,6 +20,11 @@ from agent.mcp_client import MCPClient
 class TestScheduleMCPTools(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        directory = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(directory.cleanup)
+        db_patch = patch.object(settings, "DB_PATH", str(Path(directory.name) / "tools.db"))
+        db_patch.start()
+        cls.addClassCleanup(db_patch.stop)
         seed()
 
     def test_01_get_current_datetime(self):
